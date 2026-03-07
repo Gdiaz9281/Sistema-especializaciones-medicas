@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Especializaciones{% endblock %}
+
+{% block content %}
+  <h2>Especializaciones (Catálogo)</h2>
+
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div id="contador" class="counter">Activos: 0 | Inactivos: 0</div>
+    </div>
+
+    <div class="toolbar-right">
+      <input id="buscador" class="search" type="text"
+             placeholder="Buscar por servicio, especialista, tipo u horario..." />
+      <button id="btn-toggle" class="btn-primary">Mostrar todos</button>
+    </div>
+  </div>
+
+  <div id="cards-activos" class="cards-grid"></div>
+
+  <div id="inactivos-wrap" class="inactive-wrap hidden">
+    <div class="inactive-title">Inactivos</div>
+    <div id="cards-inactivos" class="cards-grid"></div>
+  </div>
+
+  <div class="pagination">
+    <button id="btn-prev" class="btn-secondary">← Anterior</button>
+    <div id="page-info" class="page-info">Página 1</div>
+    <button id="btn-next" class="btn-secondary">Siguiente →</button>
+  </div>
+
+  <script>
+    let mostrandoTodos = false;
+
+    // datos originales del API
+    let dataOriginal = [];
+
+    // datos filtrados por buscador + toggle
+    let activosFiltrados = [];
+    let inactivosFiltrados = [];
+
+    let paginaActual = 1;
+    const pageSize = 4;
+
+    function normalizar(str) {
+      return (str ?? "").toString().toLowerCase().trim();
+    }
+
+    function aplicarFiltros() {
+      const q = normalizar(document.getElementById("buscador").value);
+
+      const activos = dataOriginal.filter(e => e.activo === true);
+      const inactivos = dataOriginal.filter(e => e.activo === false);
+
+      const filtrar = (arr) => arr.filter(e => {
+        const texto = [
+          e.id,
+          e.nombre,
+          e.especialista,
+          e.tipo,
+          e.horario,
+          e.activo ? "si" : "no"
+        ].map(normalizar).join(" ");
+        return texto.includes(q);
+      });
+
+      activosFiltrados = filtrar(activos);
+      inactivosFiltrados = filtrar(inactivos);
+
+      paginaActual = 1;
+      render();
+    }
+
+    function paginar(arr, pagina) {
+      const start = (pagina - 1) * pageSize;
+      return arr.slice(start, start + pageSize);
+    }
+
+    // ✅ PATCH real al backend para cambiar estado
+    async function setEstado(id, nuevoActivo) {
+      const resp = await fetch(`/especializaciones/api/${id}/estado`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activo: nuevoActivo })
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(txt || "Error actualizando estado");
+      }
+
+      return resp.json();
+    }
+
+    // ✅ Tarjeta (SIN addEventListener interno)
+    function crearCard(e) {
+      const card = document.createElement("div");
+      card.className = `card slide-in ${e.activo ? "" : "card-inactive"}`;
+
+      card.innerHTML = `
+        <div class="card-top">
+          <div class="badge-toggle ${e.activo ? "state-active" : "state-inactive"}"
+               data-id="${e.id}"
+               data-activo="${e.activo ? "1" : "0"}">
+            <span class="${e.activo ? "on" : ""}">ACTIVO</span>
+            <span class="sep">/</span>
+            <span class="${!e.activo ? "on" : ""}">INACTIVO</span>
+          </div>
+
+          <div class="id">#${e.id}</div>
+        </div>
+
+        <div class="card-title">${e.nombre}</div>
+
+        <div class="card-row"><span>Especialista:</span> <b>${e.especialista}</b></div>
+        <div class="card-row"><span>Tipo:</span> <b>${e.tipo}</b></div>
+        <div class="card-row"><span>Horario:</span> <b>${e.horario}</b></div>
+      `;
+
+      return card;
+    }
+
+    function render() {
+      const totalActivos = activosFiltrados.length;
+      const totalInactivos = inactivosFiltrados.length;
+
+      document.getElementById("contador").textContent =
+        `Activos: ${totalActivos} | Inactivos: ${totalInactivos}`;
+
+      // paginación SOLO activos
+      const totalPaginas = Math.max(1, Math.ceil(totalActivos / pageSize));
+      if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+
+      const paginaActivos = paginar(activosFiltrados, paginaActual);
+
+      // render activos
+      const contActivos = document.getElementById("cards-activos");
+      contActivos.innerHTML = "";
+      paginaActivos.forEach(e => contActivos.appendChild(crearCard(e)));
+
+      // render inactivos SOLO si mostrandoTodos
+      const wrap = document.getElementById("inactivos-wrap");
+      const contInactivos = document.getElementById("cards-inactivos");
+      contInactivos.innerHTML = "";
+
+      if (mostrandoTodos) {
+        wrap.classList.remove("hidden");
+        inactivosFiltrados.forEach(e => contInactivos.appendChild(crearCard(e)));
+      } else {
+        wrap.classList.add("hidden");
+      }
+
+      document.getElementById("page-info").textContent =
+        `Página ${paginaActual} de ${totalPaginas}`;
+
+      document.getElementById("btn-prev").disabled = (paginaActual <= 1);
+      document.getElementById("btn-next").disabled = (paginaActual >= totalPaginas);
+
+      document.getElementById("btn-toggle").textContent =
+        mostrandoTodos ? "Mostrar solo activos" : "Mostrar todos";
+    }
+
+    async function cargarEspecializaciones() {
+      try {
+        const resp = await fetch("/especializaciones/api");
+        dataOriginal = await resp.json();
+        aplicarFiltros();
+      } catch (err) {
+        console.error("Error cargando especializaciones:", err);
+      }
+    }
+
+    // Toggle mostrar inactivos
+    document.getElementById("btn-toggle").addEventListener("click", function () {
+      mostrandoTodos = !mostrandoTodos;
+      render();
+    });
+
+    // buscador
+    document.getElementById("buscador").addEventListener("input", aplicarFiltros);
+
+    // paginación
+    document.getElementById("btn-prev").addEventListener("click", () => {
+      paginaActual--;
+      render();
+    });
+    document.getElementById("btn-next").addEventListener("click", () => {
+      paginaActual++;
+      render();
+    });
+
+    // ✅ Delegación: toggle ACTIVO/INACTIVO (no se rompe con re-render)
+    document.addEventListener("click", async (ev) => {
+      const el = ev.target.closest(".badge-toggle");
+      if (!el) return;
+
+      const id = parseInt(el.dataset.id, 10);
+      const item = dataOriginal.find(x => x.id === id);
+      if (!item) return;
+
+      const nuevoActivo = !item.activo;
+
+      // bloquear mientras guarda
+      el.style.pointerEvents = "none";
+      el.style.opacity = "0.7";
+
+      try {
+        await setEstado(id, nuevoActivo);
+        item.activo = nuevoActivo;
+        aplicarFiltros(); // refresca y re-clasifica
+      } catch (err) {
+        console.error(err);
+        alert("No se pudo cambiar el estado. Revisa el servidor/endpoint.");
+      } finally {
+        el.style.pointerEvents = "";
+        el.style.opacity = "";
+      }
+    });
+
+    // init
+    cargarEspecializaciones();
+  </script>
+
+{% endblock %}
