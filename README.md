@@ -39,3 +39,11 @@ migraciones/
 
 Gabriel Díaz  
 Estudiante de Ingeniería Informática
+
+## Capturas del sistema
+
+### Catálogo de especialidades
+![Catálogo](Captura1.PNG)
+
+### Especialidades activas e inactivas
+![Especialidades](Captura2.PNG)
